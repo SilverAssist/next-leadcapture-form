@@ -1,6 +1,6 @@
 {
   "name": "@silverassist/leadcapture-form",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "LeadCapture IO form integration for Next.js — variant switching, ownership arbitration, and ref-counted script lifecycle via @silverassist/next-script-loader",
   "author": "Miguel Colmenares <me@miguelcolmenares.com>",
   "license": "PolyForm-Noncommercial-1.0.0",
