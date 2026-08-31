@@ -132,6 +132,81 @@ describe("LeadCaptureForm", () => {
     expect(unloadSpy).toHaveBeenCalled();
   });
 
+  it("reloads the script to repopulate a fresh container after a navigation remount, without waiting for a new interaction", async () => {
+    // Unique variant so this test's generation history can't leak in from
+    // (or into) any other test in this file -- generationByVariant is
+    // module-level state that leadCaptureLoader.reset() doesn't touch.
+    const remountTokens = { ...formTokens, remount: "GLFT-REMOUNT" };
+    const loadSpy = jest.spyOn(leadCaptureLoader, "load");
+    const reloadSpy = jest.spyOn(leadCaptureLoader, "reload");
+
+    const pageA = render(
+      <LeadCaptureForm
+        formVariant="remount"
+        formTokens={remountTokens}
+        usageContext="onPage"
+        isModalOpen={true}
+      />,
+    );
+
+    // Page A: a real user interaction loads the script for the first time.
+    act(() => {
+      document.dispatchEvent(new Event("mousemove"));
+    });
+
+    await waitFor(() => {
+      expect(loadSpy).toHaveBeenCalledWith("remount");
+    });
+
+    // Simulate the vendor script populating page A's embed div once loaded.
+    const embedA = pageA.container.querySelector(".leadforms-embd-form")!;
+    embedA.appendChild(document.createElement("div"));
+
+    // Navigate away: page A unmounts (its cleanup synchronously releases
+    // ownership, matching how React unmounts the old tree before mounting
+    // the new one on a client-side route change).
+    pageA.unmount();
+
+    // Page B: same variant/usageContext, so the same containerId -- a fresh,
+    // empty container, with no interaction dispatched on it at all.
+    const pageB = render(
+      <LeadCaptureForm
+        formVariant="remount"
+        formTokens={remountTokens}
+        usageContext="onPage"
+        isModalOpen={true}
+      />,
+    );
+
+    const embedB = pageB.container.querySelector(".leadforms-embd-form")!;
+    expect(embedB.children.length).toBe(0);
+
+    // The remount effect should reload on its own -- no interaction event
+    // dispatched for page B.
+    await waitFor(() => {
+      expect(reloadSpy).toHaveBeenCalledWith("remount");
+    });
+
+    expect(leadCaptureLoader.owner).toBe("leadcapture-container-remount-onPage");
+
+    pageB.unmount();
+  });
+
+  it("does not reload on a genuinely first mount (no prior load history)", () => {
+    const reloadSpy = jest.spyOn(leadCaptureLoader, "reload");
+
+    render(
+      <LeadCaptureForm
+        formVariant="never-loaded-before"
+        formTokens={{ "never-loaded-before": "GLFT-FRESH" }}
+        usageContext="onPage"
+        isModalOpen={true}
+      />,
+    );
+
+    expect(reloadSpy).not.toHaveBeenCalled();
+  });
+
   it("does not unload on modal unmount", () => {
     jest.useFakeTimers();
     const unloadSpy = jest.spyOn(leadCaptureLoader, "unload");

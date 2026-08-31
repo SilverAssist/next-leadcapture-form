@@ -9,7 +9,7 @@ on-page form), and ref-counted script lifecycle — built on
 
 Extracted from the fleet's `ScriptManager` implementations — the pattern
 `@silverassist/next-script-loader` itself was generalized from (see that
-package's own doc comment). Not yet published. Part of the fleet-wide
+package's own doc comment). Published on npm. Part of the fleet-wide
 third-party-integration package effort described in
 `nextjs-boilerplate/docs/NEXTJS_CORE_PACKAGE_PLAN.md`.
 

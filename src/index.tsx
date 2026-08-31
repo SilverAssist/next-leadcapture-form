@@ -211,6 +211,38 @@ export default function LeadCaptureForm({
   }, [isModalOpen, isInViewport, formVariant, usageContext, containerId, formTokens]);
 
   /**
+   * Handles a client-side navigation remount. The vendor script only scans
+   * the DOM for `.leadforms-embd-form` divs once, when it first loads (see
+   * the container comment below) -- it never repopulates a div added by a
+   * later mount. Without this, a second page's form waits forever for a
+   * *fresh* minimal-interaction event, which the click that triggered the
+   * navigation doesn't itself produce (no new focus/mousemove/scroll/
+   * touchstart fires on the new page unless the user moves again). Detect
+   * that case immediately, using this variant's own load history instead
+   * of the interaction gate above.
+   */
+  useEffect(() => {
+    if (usageContext !== "onPage") return;
+    if (currentGeneration(formVariant) === 0) return;
+    if (!leadCaptureLoader.setOwner(containerId)) return;
+
+    const container = formRef.current?.querySelector(".leadforms-embd-form");
+    if (!container || container.children.length > 0) return;
+
+    (window as Window & { form_token?: string }).form_token = formTokens[formVariant];
+    bumpGeneration(formVariant);
+    leadCaptureLoader
+      .reload(formVariant)
+      .then(() => {
+        if (!isMountedRef.current) return;
+        leadCaptureLoader.forceSetOwner(containerId);
+      })
+      .catch(() => {
+        // Silently degrade -- the surrounding page stays usable without the embed.
+      });
+  }, [formVariant, containerId, usageContext]);
+
+  /**
    * Capture the current generation at mount time — passed to the delayed
    * unload on cleanup so a stale unmount (superseded by a fresh mount that
    * already reloaded) is a no-op.
