@@ -24,29 +24,6 @@ export type UsageContext = "modal" | "onPage";
  */
 export const leadCaptureLoader = new ScriptLoader();
 
-/**
- * Generation counter per variant, incremented on every {@link ScriptLoader.load}/
- * {@link ScriptLoader.reload} call. A delayed on-unmount cleanup captures the
- * generation at mount time and skips its `unload()` call if the generation has
- * since advanced — i.e. a new mount already reloaded the script before the old
- * mount's delayed cleanup ran (a page-navigation remount, not a real teardown).
- * `ScriptLoader`'s own ref-counting handles the common case; this guards the
- * one case it doesn't: `reload()` doesn't change the reference count, so a
- * stale `unload()` after a `reload()` could drop the count to zero and tear
- * down a script a fresh mount is now depending on.
- */
-const generationByVariant = new Map<string, number>();
-
-function bumpGeneration(variant: string): number {
-  const next = (generationByVariant.get(variant) ?? 0) + 1;
-  generationByVariant.set(variant, next);
-  return next;
-}
-
-function currentGeneration(variant: string): number {
-  return generationByVariant.get(variant) ?? 0;
-}
-
 export interface LeadCaptureFormProps {
   /**
    * Form variant to render (e.g. "desktop", "mobile", "itt", "oot"). Must
@@ -124,7 +101,6 @@ export default function LeadCaptureForm({
   const formRef = useRef<HTMLDivElement>(null);
   const mountGenRef = useRef<number>(0);
   const isMountedRef = useRef<boolean>(true);
-  const hasHandledRemountRef = useRef(false);
   const containerId = `leadcapture-container-${formVariant}-${usageContext}`;
 
   useEffect(() => {
@@ -179,7 +155,6 @@ export default function LeadCaptureForm({
       // loads, rather than varying the script URL itself per variant.
       (window as Window & { form_token?: string }).form_token = formTokens[formVariant];
 
-      bumpGeneration(formVariant);
       leadCaptureLoader
         .load(formVariant)
         .then(() => {
@@ -222,29 +197,22 @@ export default function LeadCaptureForm({
    * that case immediately, using this variant's own load history instead
    * of the interaction gate above.
    *
-   * Guarded by `hasHandledRemountRef` so this can only ever act once per
-   * real component instance: `reload()` tears down and recreates the
-   * `<script>` element, and removing a `<script>` doesn't reliably cancel
-   * its in-flight network request, so calling it twice in a row for the
-   * same mount (e.g. React Strict Mode's dev-only effect-cleanup-effect
-   * replay, which reuses this same ref) can let both the superseded and
-   * the current script execute and each populate the container, rendering
-   * the widget twice. Claiming ownership isn't a substitute for this guard
-   * -- `setOwner` is idempotent for the same id, so a second call from the
-   * same instance succeeds too.
+   * Safe to call on every render this condition holds, including twice in
+   * a row for the same mount under React Strict Mode's dev-only effect
+   * replay: `ScriptLoader.reload()` (0.1.1+) shares the in-flight promise
+   * for a same-variant reload already in progress instead of tearing the
+   * script down again, so a second call here is a no-op rather than a
+   * second script execution.
    */
   useEffect(() => {
     if (usageContext !== "onPage") return;
-    if (hasHandledRemountRef.current) return;
-    if (currentGeneration(formVariant) === 0) return;
+    if (leadCaptureLoader.getGeneration() === 0) return;
     if (!leadCaptureLoader.setOwner(containerId)) return;
 
     const container = formRef.current?.querySelector(".leadforms-embd-form");
     if (!container || container.children.length > 0) return;
 
-    hasHandledRemountRef.current = true;
     (window as Window & { form_token?: string }).form_token = formTokens[formVariant];
-    bumpGeneration(formVariant);
     leadCaptureLoader
       .reload(formVariant)
       .then(() => {
@@ -262,7 +230,7 @@ export default function LeadCaptureForm({
    * already reloaded) is a no-op.
    */
   useEffect(() => {
-    mountGenRef.current = currentGeneration(formVariant);
+    mountGenRef.current = leadCaptureLoader.getGeneration();
   }, [formVariant]);
 
   /**
@@ -278,8 +246,7 @@ export default function LeadCaptureForm({
       if (usageContext === "onPage") {
         const gen = mountGenRef.current;
         setTimeout(() => {
-          if (gen < currentGeneration(formVariant)) return;
-          leadCaptureLoader.unload();
+          leadCaptureLoader.unload(gen);
         }, 100);
       }
     };
