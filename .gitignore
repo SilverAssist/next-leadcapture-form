@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Test coverage
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Misc
+*.tsbuildinfo
+.turbo/
+
+# e2e fixture artifacts
+e2e/fixture/node_modules/
+e2e/fixture/.next/
+e2e/fixture/package-lock.json
+e2e/test-results/
+e2e/playwright-report/
+*.tgz
+test-results/
+
+# --- next-testing-toolkit (generated fixture files) ---
+# The harness regenerates these on every run; only app/page.tsx is authored.
+e2e/fixture/app/layout.tsx
+e2e/fixture/next.config.mjs
+e2e/fixture/next-env.d.ts
+e2e/fixture/tsconfig.json
+e2e/fixture/package.json
