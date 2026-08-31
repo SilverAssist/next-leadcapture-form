@@ -2,7 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.2] - Unreleased
+## [0.1.3] - Unreleased
+
+### Changed
+
+- Bumped `@silverassist/next-script-loader` to `^0.1.1` and removed the
+  package-local generation map (`bumpGeneration`/`currentGeneration`) and
+  the 0.1.2 `hasHandledRemountRef` guard, now that both are handled at the
+  source: `ScriptLoader.reload()` itself shares the in-flight promise for
+  a same-variant reload already in progress (the actual fix for the
+  React Strict Mode double-render), and `ScriptLoader.getGeneration()` /
+  `unload(atGeneration?)` replace the hand-rolled generation tracking this
+  package carried since 0.1.0. No behavior change for consumers — same
+  fix, now enforced one layer down so every `ScriptLoader` consumer gets
+  it, not just this one.
+
+## [0.1.2] - 2026-08-31
 
 ### Fixed
 

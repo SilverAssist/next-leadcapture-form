@@ -193,7 +193,7 @@ describe("LeadCaptureForm", () => {
     pageB.unmount();
   });
 
-  it("reloads only once under React Strict Mode's dev-only effect replay on remount", async () => {
+  it("creates only one script element under React Strict Mode's dev-only effect replay on remount", async () => {
     // Unique variant, same reasoning as the remount test above.
     const strictTokens = { ...formTokens, strict: "GLFT-STRICT" };
     const loadSpy = jest.spyOn(leadCaptureLoader, "load");
@@ -222,8 +222,11 @@ describe("LeadCaptureForm", () => {
     pageA.unmount();
 
     // StrictMode double-invokes effects in dev (mount -> cleanup -> mount
-    // again) on the same component instance -- this is what would have
-    // caused a double reload() before the hasHandledRemountRef guard.
+    // again) on the same component instance, calling reload() twice for
+    // the same variant before either has resolved. ScriptLoader.reload()
+    // (0.1.1+) shares the in-flight promise for the second call instead of
+    // tearing the script down again, so only one <script> element should
+    // ever exist, regardless of how many times reload() itself was called.
     render(
       <StrictMode>
         <LeadCaptureForm
@@ -239,7 +242,7 @@ describe("LeadCaptureForm", () => {
       expect(reloadSpy).toHaveBeenCalledWith("strict");
     });
 
-    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(document.head.querySelectorAll("script")).toHaveLength(1);
   });
 
   it("does not reload on a genuinely first mount (no prior load history)", () => {
