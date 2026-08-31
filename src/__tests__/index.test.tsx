@@ -1,4 +1,5 @@
 import { act, render, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 
 import LeadCaptureForm, { leadCaptureLoader } from "../index";
 
@@ -190,6 +191,55 @@ describe("LeadCaptureForm", () => {
     expect(leadCaptureLoader.owner).toBe("leadcapture-container-remount-onPage");
 
     pageB.unmount();
+  });
+
+  it("reloads only once under React Strict Mode's dev-only effect replay on remount", async () => {
+    // Unique variant, same reasoning as the remount test above.
+    const strictTokens = { ...formTokens, strict: "GLFT-STRICT" };
+    const loadSpy = jest.spyOn(leadCaptureLoader, "load");
+    const reloadSpy = jest.spyOn(leadCaptureLoader, "reload");
+
+    const pageA = render(
+      <LeadCaptureForm
+        formVariant="strict"
+        formTokens={strictTokens}
+        usageContext="onPage"
+        isModalOpen={true}
+      />,
+    );
+
+    act(() => {
+      document.dispatchEvent(new Event("mousemove"));
+    });
+
+    await waitFor(() => {
+      expect(loadSpy).toHaveBeenCalledWith("strict");
+    });
+
+    const embedA = pageA.container.querySelector(".leadforms-embd-form")!;
+    embedA.appendChild(document.createElement("div"));
+
+    pageA.unmount();
+
+    // StrictMode double-invokes effects in dev (mount -> cleanup -> mount
+    // again) on the same component instance -- this is what would have
+    // caused a double reload() before the hasHandledRemountRef guard.
+    render(
+      <StrictMode>
+        <LeadCaptureForm
+          formVariant="strict"
+          formTokens={strictTokens}
+          usageContext="onPage"
+          isModalOpen={true}
+        />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(reloadSpy).toHaveBeenCalledWith("strict");
+    });
+
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
   });
 
   it("does not reload on a genuinely first mount (no prior load history)", () => {

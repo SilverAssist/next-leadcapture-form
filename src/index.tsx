@@ -124,6 +124,7 @@ export default function LeadCaptureForm({
   const formRef = useRef<HTMLDivElement>(null);
   const mountGenRef = useRef<number>(0);
   const isMountedRef = useRef<boolean>(true);
+  const hasHandledRemountRef = useRef(false);
   const containerId = `leadcapture-container-${formVariant}-${usageContext}`;
 
   useEffect(() => {
@@ -220,15 +221,28 @@ export default function LeadCaptureForm({
    * touchstart fires on the new page unless the user moves again). Detect
    * that case immediately, using this variant's own load history instead
    * of the interaction gate above.
+   *
+   * Guarded by `hasHandledRemountRef` so this can only ever act once per
+   * real component instance: `reload()` tears down and recreates the
+   * `<script>` element, and removing a `<script>` doesn't reliably cancel
+   * its in-flight network request, so calling it twice in a row for the
+   * same mount (e.g. React Strict Mode's dev-only effect-cleanup-effect
+   * replay, which reuses this same ref) can let both the superseded and
+   * the current script execute and each populate the container, rendering
+   * the widget twice. Claiming ownership isn't a substitute for this guard
+   * -- `setOwner` is idempotent for the same id, so a second call from the
+   * same instance succeeds too.
    */
   useEffect(() => {
     if (usageContext !== "onPage") return;
+    if (hasHandledRemountRef.current) return;
     if (currentGeneration(formVariant) === 0) return;
     if (!leadCaptureLoader.setOwner(containerId)) return;
 
     const container = formRef.current?.querySelector(".leadforms-embd-form");
     if (!container || container.children.length > 0) return;
 
+    hasHandledRemountRef.current = true;
     (window as Window & { form_token?: string }).form_token = formTokens[formVariant];
     bumpGeneration(formVariant);
     leadCaptureLoader

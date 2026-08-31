@@ -2,7 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.1] - Unreleased
+## [0.1.2] - Unreleased
+
+### Fixed
+
+- The remount-detection effect added in 0.1.1 could reload the script
+  twice for the same mount under React Strict Mode's dev-only
+  effect-cleanup-effect replay (which reuses the same component instance
+  and its refs) — `setOwner` is idempotent for the same container id, so
+  it didn't block the second pass, and since removing a `<script>` doesn't
+  reliably cancel its in-flight network request, both the superseded and
+  the current script could execute and each populate the container,
+  rendering the widget twice on a second page. Added a `hasHandledRemountRef`
+  guard so the effect can only act once per real component instance.
+
+## [0.1.1] - 2026-08-31
 
 ### Fixed
 
