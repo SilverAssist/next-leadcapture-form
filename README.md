@@ -13,16 +13,12 @@ package's own doc comment). Published on npm. Part of the fleet-wide
 third-party-integration package effort described in
 `nextjs-boilerplate/docs/NEXTJS_CORE_PACKAGE_PLAN.md`.
 
-**Known behavioral difference from the site implementations this was ported
-from:** the shared `leadCaptureLoader` tracks one active variant at a time —
-loading a different variant tears down the previous one, the same way
-`ScriptLoader.load()` always has. The original per-site `ScriptManager`
-tracked state per variant independently, so two different variants could in
-principle stay loaded simultaneously (e.g. a modal on `"desktop"` and an
-on-page form on `"mobile"` on the same page at once). If your site actually
-needs that, instantiate a second `ScriptLoader` yourself rather than sharing
-`leadCaptureLoader` — see [Advanced: two independent
-loaders](#advanced-two-independent-loaders).
+Each form variant gets its own independent script lifecycle — a modal on
+`"desktop"` and an on-page form on `"mobile"` can be loaded at the same time
+without either tearing the other down, matching the fleet's original
+per-site `ScriptManager`. Two `LeadCaptureForm`s for the _same_ variant
+still share one script (ref-counted — it's only removed once the last one
+unmounts).
 
 LeadCapture IO serves one shared script for every variant — it reads which
 form to render from a global `window.form_token` this component sets from
@@ -75,15 +71,6 @@ per div.
 | `isModalOpen`   | `boolean`                | —                                | Required. Only meaningful for `usageContext="modal"`.                                      |
 | `className`     | `string`                 | `""`                             | CSS classes on the container.                                                              |
 | `embedTargetId` | `string`                 | —                                | Id for the inner `.leadforms-embd-form` div (e.g. matching a WordPress `embed_target_id`). |
-
-## Advanced: two independent loaders
-
-If a page genuinely needs two different variants active at once, don't rely
-on the module-level `leadCaptureLoader` singleton for both — the underlying
-`@silverassist/next-script-loader` `ScriptLoader` only tracks one variant per
-instance. Fork this component (or file an issue) rather than sharing the
-export across two forms that need independent variants simultaneously; this
-is a real gap, not a documented-and-solved case, in v0.1.0.
 
 ## License
 

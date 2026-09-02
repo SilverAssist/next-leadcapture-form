@@ -1,13 +1,22 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 
-import LeadCaptureForm, { leadCaptureLoader } from "../index";
+import LeadCaptureForm, { getLoaderForVariant } from "../index";
 
 const formTokens = { desktop: "GLFT-DESKTOP", mobile: "GLFT-MOBILE" };
 
 describe("LeadCaptureForm", () => {
   afterEach(() => {
-    leadCaptureLoader.reset();
+    // Every variant used anywhere in this file, not just "desktop"/"mobile"
+    // -- each now has its own independent loader (that's the fix under
+    // test), so a one-off variant's script element no longer gets torn
+    // down as a side effect of some *other* variant loading later. Without
+    // resetting it here explicitly, it would linger in document.head for
+    // the rest of the suite and inflate script-count assertions in later
+    // tests.
+    ["desktop", "mobile", "remount", "strict", "never-loaded-before"].forEach((variant) =>
+      getLoaderForVariant(variant).reset(),
+    );
     jest.restoreAllMocks();
   });
 
@@ -39,7 +48,7 @@ describe("LeadCaptureForm", () => {
   });
 
   it("loads the script when a modal opens", async () => {
-    const loadSpy = jest.spyOn(leadCaptureLoader, "load");
+    const loadSpy = jest.spyOn(getLoaderForVariant("desktop"), "load");
 
     render(
       <LeadCaptureForm
@@ -56,7 +65,7 @@ describe("LeadCaptureForm", () => {
   });
 
   it("does not load until the modal opens", () => {
-    const loadSpy = jest.spyOn(leadCaptureLoader, "load");
+    const loadSpy = jest.spyOn(getLoaderForVariant("desktop"), "load");
 
     render(
       <LeadCaptureForm
@@ -71,7 +80,7 @@ describe("LeadCaptureForm", () => {
   });
 
   it("loads onPage forms once in viewport and interacted with", async () => {
-    const loadSpy = jest.spyOn(leadCaptureLoader, "load");
+    const loadSpy = jest.spyOn(getLoaderForVariant("mobile"), "load");
 
     render(
       <LeadCaptureForm
@@ -95,7 +104,7 @@ describe("LeadCaptureForm", () => {
   });
 
   it("releases ownership on unmount", () => {
-    const releaseSpy = jest.spyOn(leadCaptureLoader, "releaseOwnership");
+    const releaseSpy = jest.spyOn(getLoaderForVariant("desktop"), "releaseOwnership");
 
     const { unmount } = render(
       <LeadCaptureForm
@@ -113,7 +122,7 @@ describe("LeadCaptureForm", () => {
 
   it("schedules a delayed unload on onPage unmount", () => {
     jest.useFakeTimers();
-    const unloadSpy = jest.spyOn(leadCaptureLoader, "unload");
+    const unloadSpy = jest.spyOn(getLoaderForVariant("mobile"), "unload");
 
     const { unmount } = render(
       <LeadCaptureForm
@@ -134,12 +143,12 @@ describe("LeadCaptureForm", () => {
   });
 
   it("reloads the script to repopulate a fresh container after a navigation remount, without waiting for a new interaction", async () => {
-    // Unique variant so this test's generation history can't leak in from
-    // (or into) any other test in this file -- generationByVariant is
-    // module-level state that leadCaptureLoader.reset() doesn't touch.
+    // Unique variant, its own dedicated loader instance (not reset by
+    // afterEach, which only resets "desktop"/"mobile") -- avoids any
+    // cross-test leakage on this variant's load history/generation.
     const remountTokens = { ...formTokens, remount: "GLFT-REMOUNT" };
-    const loadSpy = jest.spyOn(leadCaptureLoader, "load");
-    const reloadSpy = jest.spyOn(leadCaptureLoader, "reload");
+    const loadSpy = jest.spyOn(getLoaderForVariant("remount"), "load");
+    const reloadSpy = jest.spyOn(getLoaderForVariant("remount"), "reload");
 
     const pageA = render(
       <LeadCaptureForm
@@ -188,7 +197,7 @@ describe("LeadCaptureForm", () => {
       expect(reloadSpy).toHaveBeenCalledWith("remount");
     });
 
-    expect(leadCaptureLoader.owner).toBe("leadcapture-container-remount-onPage");
+    expect(getLoaderForVariant("remount").owner).toBe("leadcapture-container-remount-onPage");
 
     pageB.unmount();
   });
@@ -196,8 +205,8 @@ describe("LeadCaptureForm", () => {
   it("creates only one script element under React Strict Mode's dev-only effect replay on remount", async () => {
     // Unique variant, same reasoning as the remount test above.
     const strictTokens = { ...formTokens, strict: "GLFT-STRICT" };
-    const loadSpy = jest.spyOn(leadCaptureLoader, "load");
-    const reloadSpy = jest.spyOn(leadCaptureLoader, "reload");
+    const loadSpy = jest.spyOn(getLoaderForVariant("strict"), "load");
+    const reloadSpy = jest.spyOn(getLoaderForVariant("strict"), "reload");
 
     const pageA = render(
       <LeadCaptureForm
@@ -246,7 +255,7 @@ describe("LeadCaptureForm", () => {
   });
 
   it("does not reload on a genuinely first mount (no prior load history)", () => {
-    const reloadSpy = jest.spyOn(leadCaptureLoader, "reload");
+    const reloadSpy = jest.spyOn(getLoaderForVariant("never-loaded-before"), "reload");
 
     render(
       <LeadCaptureForm
@@ -262,7 +271,7 @@ describe("LeadCaptureForm", () => {
 
   it("does not unload on modal unmount", () => {
     jest.useFakeTimers();
-    const unloadSpy = jest.spyOn(leadCaptureLoader, "unload");
+    const unloadSpy = jest.spyOn(getLoaderForVariant("desktop"), "unload");
 
     const { unmount } = render(
       <LeadCaptureForm
@@ -280,5 +289,49 @@ describe("LeadCaptureForm", () => {
     jest.useRealTimers();
 
     expect(unloadSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression: the original single shared `leadCaptureLoader` tracked one
+  // active variant at a time -- loading a second, different variant tore
+  // the first one's script down (ScriptLoader#ensureLoaded's `if
+  // (this.#currentVariant !== variant) this.#teardownScript()`), unlike the
+  // fleet's original per-site `ScriptManager`, which kept independent state
+  // per variant in a `Map`. A page mounting a modal on one variant and an
+  // on-page form on a different variant at the same time would silently
+  // lose one of the two embeds. `getLoaderForVariant` gives each variant
+  // its own `ScriptLoader` instance, restoring that independence.
+  it("keeps two different variants loaded independently at the same time", async () => {
+    const desktopLoadSpy = jest.spyOn(getLoaderForVariant("desktop"), "load");
+    const mobileLoadSpy = jest.spyOn(getLoaderForVariant("mobile"), "load");
+
+    render(
+      <>
+        <LeadCaptureForm
+          formVariant="desktop"
+          formTokens={formTokens}
+          usageContext="modal"
+          isModalOpen={true}
+        />
+        <LeadCaptureForm
+          formVariant="mobile"
+          formTokens={formTokens}
+          usageContext="onPage"
+          isModalOpen={true}
+        />
+      </>,
+    );
+
+    act(() => {
+      document.dispatchEvent(new Event("mousemove"));
+    });
+
+    await waitFor(() => {
+      expect(desktopLoadSpy).toHaveBeenCalledWith("desktop");
+      expect(mobileLoadSpy).toHaveBeenCalledWith("mobile");
+    });
+
+    // Both script elements must still be in the DOM -- loading "mobile"
+    // must not have torn down "desktop"'s script, and vice versa.
+    expect(document.head.querySelectorAll("script")).toHaveLength(2);
   });
 });

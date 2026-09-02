@@ -2,7 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.3] - Unreleased
+## [0.1.4] - 2026-09-02
+
+### Fixed
+
+- **Two different form variants could no longer be loaded at the same
+  time** — `leadCaptureLoader`, a single module-level `ScriptLoader`
+  shared by every `LeadCaptureForm` instance regardless of variant, tears
+  down whichever script is currently loaded when a _different_ variant
+  calls `.load()`/`.reload()` (`ScriptLoader#ensureLoaded`'s
+  `if (this.#currentVariant !== variant) this.#teardownScript()`). A page
+  mounting a modal on one variant and an on-page form on a different
+  variant at the same time silently lost one of the two embeds. The
+  fleet's original per-site `ScriptManager` this package replaced kept
+  independent state per variant in a `Map`, so two variants could stay
+  loaded simultaneously without interfering — this was a real behavioral
+  regression from that, documented in the README as a known gap since
+  `0.1.0` rather than fixed. Replaced the single shared instance with
+  `getLoaderForVariant(variant)`, a per-variant registry of `ScriptLoader`
+  instances: multiple `LeadCaptureForm`s for the _same_ variant still
+  share one loader (ref-counted, as before), but different variants each
+  get their own and never tear each other down — restoring parity with
+  the original `ScriptManager`. Not currently reachable in the fleet:
+  `family-nextjs`, the only live consumer, deliberately renders exactly
+  one variant at a time (`LeadFormProvider` picks `desktop`/`mobile` by
+  device, gated so both never mount together) — this closes the gap for
+  any future consumer that does need two variants at once, rather than
+  fixing an observed production bug.
+
+## [0.1.3] - 2026-08-31
 
 ### Changed
 
