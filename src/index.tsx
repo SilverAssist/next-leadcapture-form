@@ -13,16 +13,33 @@ import { useEffect, useRef, useState } from "react";
 export type UsageContext = "modal" | "onPage";
 
 /**
- * Module-level singleton: every `LeadCaptureForm` instance on the page
- * shares one loader. `ScriptLoader` tracks a single active variant at a
- * time — switching variants tears down the previous one — which matches
- * how this form is actually used in the fleet (one device/territory
- * variant active per page). A page that genuinely needs two different
- * variants loaded simultaneously (e.g. a modal on "desktop" and an on-page
- * form on "mobile" at once) isn't supported by this shared instance; see
- * the README for the workaround.
+ * Module-level registry of loaders, one per form variant. `ScriptLoader`
+ * itself tracks a single active variant at a time, so every
+ * `LeadCaptureForm` instance for the SAME variant shares that variant's
+ * loader (ref-counted, exactly one script element in the DOM regardless of
+ * how many instances render it) — but two different variants (e.g. a modal
+ * on "desktop" and an on-page form on "mobile") each get their own
+ * independent loader and never tear each other down. Matches the fleet's
+ * original per-site `ScriptManager`'s `Map<variant, state>` design, which
+ * this replaced; see the CHANGELOG for the earlier single-shared-instance
+ * version this restores parity with.
  */
-export const leadCaptureLoader = new ScriptLoader();
+const loaders = new Map<string, ScriptLoader>();
+
+/**
+ * Returns the {@link ScriptLoader} for `variant`, creating one on first
+ * use. Exported for tests and for advanced callers that need direct access
+ * to a specific variant's loader (e.g. to inspect {@link ScriptLoader.owner}
+ * outside a `LeadCaptureForm` instance).
+ */
+export function getLoaderForVariant(variant: string): ScriptLoader {
+  let loader = loaders.get(variant);
+  if (!loader) {
+    loader = new ScriptLoader();
+    loaders.set(variant, loader);
+  }
+  return loader;
+}
 
 export interface LeadCaptureFormProps {
   /**
@@ -111,7 +128,7 @@ export default function LeadCaptureForm({
   }, []);
 
   useEffect(() => {
-    leadCaptureLoader.configure({
+    getLoaderForVariant(formVariant).configure({
       urls: { [formVariant]: scriptUrl ?? DEFAULT_LEADCAPTURE_SCRIPT_URL },
     });
   }, [formVariant, scriptUrl]);
@@ -155,11 +172,11 @@ export default function LeadCaptureForm({
       // loads, rather than varying the script URL itself per variant.
       (window as Window & { form_token?: string }).form_token = formTokens[formVariant];
 
-      leadCaptureLoader
+      getLoaderForVariant(formVariant)
         .load(formVariant)
         .then(() => {
           if (!isMountedRef.current) return;
-          leadCaptureLoader.forceSetOwner(containerId);
+          getLoaderForVariant(formVariant).forceSetOwner(containerId);
         })
         .catch(() => {
           // Silently degrade — the surrounding page stays usable without
@@ -206,18 +223,19 @@ export default function LeadCaptureForm({
    */
   useEffect(() => {
     if (usageContext !== "onPage") return;
-    if (leadCaptureLoader.getGeneration() === 0) return;
-    if (!leadCaptureLoader.setOwner(containerId)) return;
+    const loader = getLoaderForVariant(formVariant);
+    if (loader.getGeneration() === 0) return;
+    if (!loader.setOwner(containerId)) return;
 
     const container = formRef.current?.querySelector(".leadforms-embd-form");
     if (!container || container.children.length > 0) return;
 
     (window as Window & { form_token?: string }).form_token = formTokens[formVariant];
-    leadCaptureLoader
+    loader
       .reload(formVariant)
       .then(() => {
         if (!isMountedRef.current) return;
-        leadCaptureLoader.forceSetOwner(containerId);
+        loader.forceSetOwner(containerId);
       })
       .catch(() => {
         // Silently degrade -- the surrounding page stays usable without the embed.
@@ -230,7 +248,7 @@ export default function LeadCaptureForm({
    * already reloaded) is a no-op.
    */
   useEffect(() => {
-    mountGenRef.current = leadCaptureLoader.getGeneration();
+    mountGenRef.current = getLoaderForVariant(formVariant).getGeneration();
   }, [formVariant]);
 
   /**
@@ -241,12 +259,13 @@ export default function LeadCaptureForm({
    */
   useEffect(() => {
     return () => {
-      leadCaptureLoader.releaseOwnership(containerId);
+      const loader = getLoaderForVariant(formVariant);
+      loader.releaseOwnership(containerId);
 
       if (usageContext === "onPage") {
         const gen = mountGenRef.current;
         setTimeout(() => {
-          leadCaptureLoader.unload(gen);
+          loader.unload(gen);
         }, 100);
       }
     };
