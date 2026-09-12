@@ -6,11 +6,15 @@ module.exports = {
     "^@/(.*)$": "<rootDir>/src/$1",
   },
   testMatch: ["<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}"],
-  collectCoverageFrom: [
-    "src/**/*.{ts,tsx}",
-    "!src/**/*.d.ts",
-    "!src/**/index.ts",
-  ],
+  collectCoverageFrom: ["src/**/*.{ts,tsx}", "!src/**/*.d.ts", "!src/**/index.ts"],
+  coverageThreshold: {
+    global: {
+      branches: 75,
+      functions: 80,
+      lines: 75,
+      statements: 75,
+    },
+  },
   // @swc/jest instead of ts-jest: ts-jest peer-requires TypeScript <7 and has
   // no TypeScript 7 release; swc transpiles without type-checking --
   // `npm run typecheck` (tsc --noEmit) is what type-checks.
